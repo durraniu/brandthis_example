@@ -1,3 +1,4 @@
+# Load packages
 from colorthief import ColorThief
 import pickle
 import random
@@ -5,28 +6,33 @@ from chatlas import ChatGoogle, Tool
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
+# Load GEMINI_API_KEY
 load_dotenv()
 
+# Load fonts list
 with open("fonts.pkl", "rb") as f:
     fonts = pickle.load(f)
 
+# Get a random combination of heading and base font
 def fonts_vector():
     return random.choice(fonts)
 
+# Convert rgb to hex
 def rgb_to_hex(r, g, b):
     return f"#{r:02x}{g:02x}{b:02x}"
 
+# Get a color palette from an image
 def create_palette_from_image(img_path):
     color_thief = ColorThief(img_path)
     palette = color_thief.get_palette(color_count=5, quality=1)
     pal = [rgb_to_hex(*rgb) for rgb in palette]
     return pal
 
-
+# Get brand yml instructions
 with open("inst/extdata/brand_yml_instructions.txt", "r") as f:
     brand_instructions = f.read()
 
-
+# System prompt
 sys_prompt_brand = (
     "You create _brand.yml files.\n"
     "If a color palette is provided to you, use that and your own knowledge "
@@ -44,11 +50,12 @@ sys_prompt_brand = (
     f"{brand_instructions}"
 )
 
-
+# Create chat object
 chat_brand = ChatGoogle(
     system_prompt=sys_prompt_brand
 )
 
+# Fonts tool that gets a random combination of heading and base google fonts
 fonts_vector_tool = Tool(
   func=fonts_vector,
   name="fonts_vector",
@@ -56,14 +63,18 @@ fonts_vector_tool = Tool(
   parameters=[]
 )
 
+# Register the fonts tool
 chat_brand.register_tool(fonts_vector_tool)
 
+# User prompt
 user_prompt = "Create a _brand.yml for my personal brand. My name is Big Head."
 
+# Get colors from example image
 img =  "squirrel_tail_bushy_tail.jpg" 
 my_colors = create_palette_from_image(img)
 my_colors = ", ".join(my_colors)
 
+# Get brand.yml out
 chat_brand.chat(f"{user_prompt} The initial color palette is {my_colors}")
 
 # class BrandYML(BaseModel):
