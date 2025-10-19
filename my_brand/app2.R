@@ -1,7 +1,9 @@
 library(shiny)
 library(shinychat)
+library(shinyAce)
 library(bslib)
 library(brand.yml)
+library(ellmer)
 library(brandthis) # in dev
 library(thematic)
 library(ggplot2)
@@ -40,6 +42,11 @@ brand_sidebar <- sidebar(
           width = "40%",
           bg = "var(--bs-dark)",
           fg = "var(--bs-light)",
+          fileInput("image_upload", h5("Upload image(s)"),
+            multiple = TRUE,
+            accept = c('image/png', 'image/jpeg'),
+            placeholder = "Drag and drop images",
+            width = "100%"),
           chat_ui(
         id = "chat",
         messages = "**Hello!** How can I help you today?"
@@ -76,61 +83,70 @@ brand_sidebar <- sidebar(
           )
         )
       ),
-      htmltools::tagAppendAttributes(
-        textAreaInput(
-          "txt_brand_yml",
-          label = NULL,
-          value = paste(readLines(brand_path, warn = FALSE), collapse = "\n"),
-          width = "100%",
-          height = "80%",
-          rows = 20
-        ),
-        class = "font-monospace",
-        .cssSelector = "textarea"
-      ),
-      card_body(
-        padding = 0,
-        div(
-          id = "editor_brand_yml",
-          style = "overflow: auto;",
-          as_fill_item()
-        )
-      )
+            aceEditor("txt_brand_yml",
+                value = paste(readLines(brand_path, warn = FALSE), collapse = "\n"),
+                mode = "yaml",
+                theme = "xcode",
+                height = "400px",
+                fontSize = 14,
+                wordWrap = TRUE,
+                showPrintMargin = FALSE,
+                highlightActiveLine = TRUE)
+      # htmltools::tagAppendAttributes(
+      #   textAreaInput(
+      #     "txt_brand_yml",
+      #     label = NULL,
+      #     value = paste(readLines(brand_path, warn = FALSE), collapse = "\n"),
+      #     width = "100%",
+      #     height = "80%",
+      #     rows = 20
+      #   ),
+      #   class = "font-monospace",
+      #   .cssSelector = "textarea"
+      # ),
+      # card_body(
+      #   padding = 0,
+      #   div(
+      #     id = "editor_brand_yml",
+      #     style = "overflow: auto;",
+      #     as_fill_item()
+      #   )
+      # )
     )
        ),
 
-    tags$script(
-      type = "module",
-      HTML(
-        '
-import { basicEditor } from "https://esm.sh/prism-code-editor@3.4.0/setups";
-import "https://esm.sh/prism-code-editor@3.4.0/prism/languages/yaml";
+#     tags$script(
+#       type = "module",
+#       HTML(
+#         '
+# import { basicEditor } from "https://esm.sh/prism-code-editor@3.4.0/setups";
+# import "https://esm.sh/prism-code-editor@3.4.0/prism/languages/yaml";
 
-const shinyInput = document.getElementById("txt_brand_yml");
+# const shinyInput = document.getElementById("txt_brand_yml");
 
-function initBrandEditor() {
-  if (typeof Shiny.setInputValue !== "function") {
-    setTimeout(initBrandEditor, 100);
-    return;
-  }
-  window.brandEditor = basicEditor(
-    "#editor_brand_yml",
-    {
-      language: "yml",
-      theme: "github-dark",
-      value: shinyInput.value,
-      onUpdate: (value) => {
-        Shiny.setInputValue("txt_brand_yml", value);
-      },
-    },
-    () => shinyInput.parentElement.parentElement.remove()
-  );
-}
+# function initBrandEditor() {
+#   if (typeof Shiny.setInputValue !== "function") {
+#     setTimeout(initBrandEditor, 100);
+#     return;
+#   }
+#   window.brandEditor = basicEditor(
+#     "#editor_brand_yml",
+#     {
+#       language: "yml",
+#       theme: "github-dark",
+#       value: shinyInput.value,
+#       onUpdate: (value) => {
+#         Shiny.setInputValue("txt_brand_yml", value);
+#       },
+#     },
+#     () => shinyInput.parentElement.parentElement.remove()
+#   );
+# }
 
-initBrandEditor();
-'
-      )
-    ),
+# initBrandEditor();
+# '
+#       )
+#     ),
 
     tags$style(
       HTML(
@@ -161,7 +177,7 @@ page_dashboard <- nav_panel(
           "Radio Button Group",
           choices = c("Option A", "Option B", "Option C", "Option D")
         ),
-        actionButton("action1", "Primary Button")
+        actionButton("action1", "Action Button")
       ),
       shiny::useBusyIndicators(),
       layout_column_wrap(
@@ -339,12 +355,60 @@ observeEvent(input$show_chat, sidebar_toggle("chat_sidebar"))
     "example_function <- function() {\n  return(\"Function output text\")\n}"
   })
 
-  client_brand <- brandthis::chat_brand(ellmer::chat_github, model = "gpt-4.1")
+  client_brand <- brandthis::chat_brand(
+    # ellmer::chat_google_gemini
+    ellmer::chat_github, 
+    model = "gpt-4.1"
+  )
+
+  # Initialize a flag to check if images are sent
+    images_sent <- reactiveVal(FALSE)
+
+    # Variable to store image contents
+    image_contents <- reactiveVal(NULL)
+  
+    brand_code <- reactiveVal(NULL)
+  
+    observeEvent(input$image_upload, {
+      # Reset the flag
+      images_sent(FALSE)
+
+      # Store image contents
+      image_contents(lapply(input$image_upload$datapath, content_image_file))
+    })
 
     observeEvent(input$chat_user_input, {
-    stream <- client_brand$stream_async(input$chat_user_input)
-    chat_append("chat", stream)
+
+      ## If images are uploaded, attach them with the chat
+      if (!images_sent() && !is.null(image_contents())) {
+        response_promise <- do.call(client_brand$chat_async, c(list(input$chat_user_input), image_contents()))
+        images_sent(TRUE)
+      } else {
+        ## Otherwise just chat without images
+        response_promise <- client_brand$chat_async(input$chat_user_input)
+      }
+
+      response_promise$then(function(response) {
+        brand_code(response)
+        chat_append("chat", response)
+      })
   })
+
+      observeEvent(brand_code(), {
+        # req(brand_code())
+        # browser()
+
+          if (grepl("meta", brand_code())){
+            # Remove the backticks before and after the _brand.yml
+            cleaned_brand_code <- sub("^```yaml\\s*", "", brand_code())
+            cleaned_brand_code <- sub("\\s*```\\s*$", "", cleaned_brand_code)
+
+            # res <- paste(readLines(cleaned_brand_code, warn = FALSE), collapse = "\n")
+            # updateTextAreaInput(session, "txt_brand_yml", value = cleaned_brand_code)
+            # session$sendCustomMessage("updateBrandEditor", cleaned_brand_code)
+            updateAceEditor(session, "txt_brand_yml", value = cleaned_brand_code)
+          }      
+      })
 
 }
 
