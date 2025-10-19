@@ -2,7 +2,7 @@ library(shiny)
 library(shinychat)
 library(bslib)
 library(brand.yml)
-library(brandthis)
+library(brandthis) # in dev
 library(thematic)
 library(ggplot2)
 
